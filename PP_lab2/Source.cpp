@@ -10,7 +10,7 @@
 using namespace std;
 
 #define err_exit(code, str) { cerr << str << ": " << (code) << endl; exit(EXIT_FAILURE); }
-const int TASKS_COUNT = 100;
+const int TASKS_COUNT = 1000;
 int task_list[TASKS_COUNT]; // Массив заданий
 int current_task = 0; // Указатель на текущее задание
 pthread_mutex_t mutex; // Мьютекс
