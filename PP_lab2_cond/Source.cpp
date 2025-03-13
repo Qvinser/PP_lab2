@@ -202,7 +202,7 @@ void MyMapReduce(void* inpt, int threads_number) {
 int main()
 {
 	int err;
-	//
+	setlocale(LC_ALL, "Russian");
 	pthread_t producer_thread, consumer_thread; // Идентификаторы потоков
 	// Инициализируем мьютекс и условную переменную
 	err = pthread_cond_init(&cond, NULL);
@@ -230,7 +230,7 @@ int main()
 	// и условной переменной
 
 	int threads_number = 32;
-	cout << "threads_number: " << threads_number << endl;
+	cout << "Свёртка: " << endl;
 	MyMapReduce(&products_list, threads_number);
 
 	for (auto elem = product_convolution.begin();
