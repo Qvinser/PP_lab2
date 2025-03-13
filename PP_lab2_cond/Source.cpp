@@ -228,8 +228,6 @@ int main()
 	pthread_join(consumer_thread, NULL);
 	// Освобождаем ресурсы, связанные с мьютексом
 	// и условной переменной
-	pthread_mutex_destroy(&mutex);
-	pthread_cond_destroy(&cond);
 
 	int threads_number = 32;
 	cout << "threads_number: " << threads_number << endl;
@@ -239,5 +237,7 @@ int main()
 		elem != product_convolution.end(); ++elem)
 		std::cout << (*elem).first << ": " << (*elem).second << std::endl;
 
-	err = pthread_mutex_destroy(&conv_mutex);
+	pthread_mutex_destroy(&mutex);
+	pthread_cond_destroy(&cond);
+	pthread_mutex_destroy(&conv_mutex);
 }
