@@ -2,50 +2,42 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
+#include <chrono>
 #include <map>
+#include <windows.h>
 #include <pthread.h> 
 
-#define PRODUCT_COUNT 50
+#define PRODUCT_COUNT 50000
 
 using namespace std;
 #define err_exit(code, str) { cerr << str << ": " << strerror(code) \
  << endl; exit(EXIT_FAILURE); }
 enum store_state { EMPTY, FULL };
 store_state state = EMPTY;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond;
+pthread_mutex_t conv_mutex = PTHREAD_MUTEX_INITIALIZER;
+enum cond_state { LOCK, UNLOCK };
+cond_state cond = UNLOCK;
 int store;
 int current_product = 0;
 vector<int> products_list(PRODUCT_COUNT); // Массив продуктов
 map<int, int> product_convolution;
-pthread_mutex_t conv_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* producer(void* arg)
 {
 	int err;
 	for (; current_product < PRODUCT_COUNT;) {
 		// Захватываем мьютекс и ожидаем освобождения склада
-		err = pthread_mutex_lock(&mutex);
-		if (err != 0)
-			err_exit(err, "Cannot lock mutex");
-		while (state == FULL) {
-			err = pthread_cond_wait(&cond, &mutex);
-			if (err != 0)
-				err_exit(err, "Cannot wait on condition variable");
-		}
+		while (cond == LOCK || state == FULL);// Sleep(1);
+		cond = LOCK;
 		// Получен сигнал, что на складе не осталось товаров.
 		// Производим новый товар.
 		store = rand() % PRODUCT_COUNT;
 		current_product++;
 		state = FULL;
 		// Посылаем сигнал, что на складе появился товар.
-		err = pthread_cond_signal(&cond);
-		if (err != 0)
-			err_exit(err, "Cannot send signal");
-		err = pthread_mutex_unlock(&mutex);
-		if (err != 0)
-			err_exit(err, "Cannot unlock mutex");
+		cond = UNLOCK;
 	}
+	return NULL;
 }
 void* consumer(void* arg)
 {
@@ -53,28 +45,18 @@ void* consumer(void* arg)
 	//
 	for (; current_product < PRODUCT_COUNT;) {
 		// Захватываем мьютекс и ожидаем появления товаров на складе
-		err = pthread_mutex_lock(&mutex);
-		if (err != 0)
-			err_exit(err, "Cannot lock mutex");
-		while (state == EMPTY) {
-			err = pthread_cond_wait(&cond, &mutex);
-			if (err != 0)
-				err_exit(err, "Cannot wait on condition variable");
-		}
+		while (cond == LOCK || state == EMPTY);// Sleep(1);
+		cond = LOCK;
 		// Получен сигнал, что на складе имеется товар.
 		// Потребляем его.
-		cout << "Consuming number " << store << "...";
+		//cout << "Consuming number " << store << "...";
 		products_list[current_product - 1] = store;
-		cout << "done" << endl;
+		//cout << "done" << endl;
 		state = EMPTY;
 		// Посылаем сигнал, что на складе не осталось товаров.
-		err = pthread_cond_signal(&cond);
-		if (err != 0)
-			err_exit(err, "Cannot send signal");
-		err = pthread_mutex_unlock(&mutex);
-		if (err != 0)
-			err_exit(err, "Cannot unlock mutex");
+		cond = UNLOCK;
 	}
+	return NULL;
 }
 
 
@@ -119,9 +101,6 @@ template<typename T>
 void convolute(void* arg, int from, int to) {
 	int err;
 	std::vector<T>* vec = (vector<T>*) arg;
-	err = pthread_mutex_lock(&conv_mutex);
-	if (err != 0)
-		err_exit(err, "Cannot lock mutex"); 
 	for (size_t i = from; i < to && i < vec->size(); i += 1)
 	{
 		int elem = (*vec)[i];
@@ -129,13 +108,18 @@ void convolute(void* arg, int from, int to) {
 			product_convolution[elem] += 1;
 		}
 		else {
+			err = pthread_mutex_lock(&conv_mutex);
+			if (err != 0)
+				err_exit(err, "Cannot lock mutex"); 
+
 			product_convolution[elem] = 1;
+
+			err = pthread_mutex_unlock(&conv_mutex);
+			if (err != 0)
+			err_exit(err, "Cannot unlock mutex");
 		}
 
 	}
-	err = pthread_mutex_unlock(&conv_mutex);
-	if (err != 0)
-		err_exit(err, "Cannot unlock mutex");
 }
 template<typename T>
 void increment(void* arg, int from, int to)
@@ -155,6 +139,7 @@ void MyMapReduce(void* inpt, int threads_number) {
 	pthread_t* threads = new pthread_t[threads_number];
 	thread_map_params* map_params = new thread_map_params[threads_number];
 	thread_reduce_params* reduce_params = new thread_reduce_params[threads_number];
+	auto start_map = std::chrono::steady_clock::now();
 	for (size_t n = 0; n < threads_number; n++) {
 		// Инициализация параметров
 		map_params[n].map = increment<int>;
@@ -175,8 +160,10 @@ void MyMapReduce(void* inpt, int threads_number) {
 	for (size_t n = 0; n < threads_number; n++) {
 		pthread_join(threads[n], NULL);
 	}
-	if (err != 0)
-		err_exit(err, "Cannot initialize mutex");
+
+	std::chrono::duration<double> elapsed_map = std::chrono::steady_clock::now() - start_map;
+	cout << "Time spent on map: " << elapsed_map.count() << " seconds." << endl;
+	auto start_reduce = std::chrono::steady_clock::now();
 	for (size_t n = 0; n < threads_number; n++) {
 		// Инициализация параметров
 		reduce_params[n].reduce = convolute<int>;
@@ -197,6 +184,8 @@ void MyMapReduce(void* inpt, int threads_number) {
 	for (size_t n = 0; n < threads_number; n++) {
 		pthread_join(threads[n], NULL);
 	}
+	std::chrono::duration<double> elapsed_reduce = std::chrono::steady_clock::now() - start_reduce;
+	cout << "Time spent on reduce: " << elapsed_reduce.count() << " seconds." << endl;
 }
 
 int main()
@@ -205,12 +194,6 @@ int main()
 	setlocale(LC_ALL, "Russian");
 	pthread_t producer_thread, consumer_thread; // Идентификаторы потоков
 	// Инициализируем мьютекс и условную переменную
-	err = pthread_cond_init(&cond, NULL);
-	if (err != 0)
-		err_exit(err, "Cannot initialize condition variable");
-	err = pthread_mutex_init(&mutex, NULL);
-	if (err != 0)
-		err_exit(err, "Cannot initialize mutex");
 	pthread_mutexattr_t conv_attr;
 	pthread_mutexattr_init(&conv_attr);
 	pthread_mutexattr_settype(&conv_attr, PTHREAD_MUTEX_NORMAL);
@@ -233,11 +216,9 @@ int main()
 	cout << "Свёртка: " << endl;
 	MyMapReduce(&products_list, threads_number);
 
-	for (auto elem = product_convolution.begin();
-		elem != product_convolution.end(); ++elem)
-		std::cout << (*elem).first << ": " << (*elem).second << std::endl;
+	//for (auto elem = product_convolution.begin();
+	//	elem != product_convolution.end(); ++elem)
+	//	std::cout << (*elem).first << ": " << (*elem).second << std::endl;
 
-	pthread_mutex_destroy(&mutex);
-	pthread_cond_destroy(&cond);
 	pthread_mutex_destroy(&conv_mutex);
 }

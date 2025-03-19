@@ -147,7 +147,7 @@ int main()
     SOCKET client_fd = INVALID_SOCKET;
 
     // Thread pull
-    int threads_number = 100;
+    int threads_number = 50;
     pthread_t* thread_stack = new pthread_t[threads_number];
     int threads_end = 0;
     for (size_t n = 0; n < threads_number; n++) {
